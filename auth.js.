@@ -1,0 +1,48 @@
+const SUPABASE_URL = https://ubsdezmxzoztvzplngie.supabase.co;
+const SUPABASE_KEY = sb_publishable_2sFK3LP1d5bh0C4GqbXktA_7RsPi0u_;
+
+const supabaseClient = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+async function inscrireArtiste(email, password, artistName) {
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        artist_name: artistName
+      }
+    }
+  });
+
+  if (error) throw error;
+
+  return data;
+}
+
+async function connecterArtiste(email, password) {
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (error) throw error;
+
+  return data;
+}
+
+async function deconnecterArtiste() {
+  const { error } = await supabaseClient.auth.signOut();
+
+  if (error) throw error;
+}
+
+async function obtenirSession() {
+  const { data, error } = await supabaseClient.auth.getSession();
+
+  if (error) throw error;
+
+  return data.session;
+}
