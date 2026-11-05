@@ -1,8 +1,8 @@
 "use strict";
 
 (() => {
-  const SUPABASE_URL = https://ubsdezmxzoztvzplngie.supabase.co;
-  const SUPABASE_KEY = sb_publishable_2sFK3LP1d5bh0C4GqbXktA_7RsPi0u_;
+  const SUPABASE_URL = https://ddwcdltdbvfazfxcpxvz.supabase.co;
+  const SUPABASE_KEY = sb_publishable_xMOkBt9iZgPO2y69NRTM2A_bP77mouC;
 
   if (!window.supabase) {
     throw new Error("La bibliothèque Supabase n'a pas été chargée.");
