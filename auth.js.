@@ -1,194 +1,186 @@
 "use strict";
 
-(() => {
-  const SUPABASE_URL = https://ddwcdltdbvfazfxcpxvz.supabase.co;
-  const SUPABASE_KEY = sb_publishable_xMOkBt9iZgPO2y69NRTM2A_bP77mouC;
+import {
+  auth,
+  db,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut
+} from "./firebase.js";
 
-  if (!window.supabase) {
-    throw new Error("La bibliothèque Supabase n'a pas été chargée.");
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  orderBy
+} from "https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js";
+
+// INSCRIPTION D'UN ARTISTE
+async function inscrireArtiste(email, password, artistName) {
+  const nom = artistName.trim();
+  const adresse = email.trim();
+
+  if (!nom || !adresse || password.length < 8) {
+    throw new Error("Vérifie les champs. Le mot de passe doit contenir au moins 8 caractères.");
   }
 
-  if (
-    SUPABASE_URL === https://ubsdezmxzoztvzplngie.supabase.co||
-    SUPABASE_KEY === sb_publishable_2sFK3LP1d5bh0C4GqbXktA_7RsPi0u_
-  ) {
-    throw new Error("Configure l'URL et la clé publique de Supabase dans auth.js.");
-  }
-
-  const client = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
+  const result = await createUserWithEmailAndPassword(
+    auth,
+    adresse,
+    password
   );
 
-  // INSCRIPTION D'UN ARTISTE
-  async function inscrireArtiste(email, password, artistName) {
-    const nom = artistName.trim();
-    const adresse = email.trim();
+  await sendEmailVerification(result.user);
 
-    if (!nom || !adresse || password.length < 8) {
-      throw new Error(
-        "Vérifie les champs. Le nom et l'e-mail sont obligatoires, et le mot de passe doit contenir au moins 8 caractères."
-      );
-    }
+  await setDoc(doc(db, "users", result.user.uid), {
+    artist_name: nom,
+    email: adresse,
+    country: null,
+    role: "artist",
+    created_at: new Date().toISOString()
+  });
 
-    const { data, error } = await client.auth.signUp({
-      email: adresse,
-      password,
-      options: {
-        data: {
-          artist_name: nom
-        }
-      }
+  return result;
+}
+
+// CONNEXION
+async function connecterArtiste(email, password) {
+  const result = await signInWithEmailAndPassword(
+    auth,
+    email.trim(),
+    password
+  );
+
+  await obtenirOuCreerProfil(result.user);
+
+  return result;
+}
+
+// PROFIL ARTISTE
+async function obtenirOuCreerProfil(user) {
+  if (!user) {
+    throw new Error("Connecte-toi pour accéder à ton profil.");
+  }
+
+  const profilRef = doc(db, "users", user.uid);
+  const profilSnap = await getDoc(profilRef);
+
+  if (profilSnap.exists()) {
+    return profilSnap.data();
+  }
+
+  const profil = {
+    artist_name: user.displayName || user.email.split("@")[0],
+    email: user.email,
+    country: null,
+    role: "artist",
+    created_at: new Date().toISOString()
+  };
+
+  await setDoc(profilRef, profil);
+
+  return profil;
+}
+
+// SESSION
+async function obtenirSession() {
+  return new Promise((resolve) => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      unsubscribe();
+      resolve(user);
     });
+  });
+}
 
-    if (error) throw error;
-
-    // Supabase peut exiger une confirmation par e-mail.
-    // Dans ce cas, le profil sera créé lors de la première connexion.
-    if (data.user && data.session) {
-      await obtenirOuCreerProfil(data.user);
-    }
-
-    return data;
+// PROFIL CONNECTÉ
+async function obtenirProfilArtiste(user) {
+  if (!user) {
+    throw new Error("Connecte-toi pour accéder à ton profil.");
   }
 
-  // CONNEXION
-  async function connecterArtiste(email, password) {
-    const { data, error } = await client.auth.signInWithPassword({
-      email: email.trim(),
-      password
-    });
+  return obtenirOuCreerProfil(user);
+}
 
-    if (error) throw error;
+// CRÉER UNE SORTIE MUSICALE
+async function creerSortie(title, releaseType) {
+  const user = await obtenirSession();
 
-    if (data.user) {
-      await obtenirOuCreerProfil(data.user);
-    }
-
-    return data;
+  if (!user) {
+    throw new Error("Connecte-toi pour continuer.");
   }
 
-  // OBTENIR OU CRÉER LE PROFIL
-  async function obtenirOuCreerProfil(user) {
-    const { data: profil, error: lectureErreur } = await client
-      .from("artists")
-      .select("id, artist_name, country, created_at")
-      .eq("id", user.id)
-      .maybeSingle();
+  const titre = title.trim();
+  const typesAutorises = ["single", "ep", "album"];
 
-    if (lectureErreur) throw lectureErreur;
-
-    if (profil) return profil;
-
-    const nom =
-      user.user_metadata?.artist_name ||
-      user.email?.split("@")[0] ||
-      "Artiste";
-
-    const { data: nouveauProfil, error: creationErreur } = await client
-      .from("artists")
-      .insert({
-        id: user.id,
-        artist_name: nom,
-        country: null
-      })
-      .select("id, artist_name, country, created_at")
-      .single();
-
-    if (creationErreur) throw creationErreur;
-
-    return nouveauProfil;
+  if (!titre || titre.length > 200) {
+    throw new Error("Le titre doit contenir entre 1 et 200 caractères.");
   }
 
-  // SESSION
-  async function obtenirSession() {
-    const { data, error } = await client.auth.getSession();
-
-    if (error) throw error;
-
-    return data.session;
+  if (!typesAutorises.includes(releaseType)) {
+    throw new Error("Type de sortie invalide.");
   }
 
-  // PROFIL DE L'ARTISTE CONNECTÉ
-  async function obtenirProfilArtiste(user) {
-    if (!user) {
-      throw new Error("Connecte-toi pour accéder à ton profil.");
-    }
+  const resultat = await addDoc(collection(db, "releases"), {
+    artist_id: user.uid,
+    title: titre,
+    release_type: releaseType,
+    status: "draft",
+    created_at: new Date().toISOString()
+  });
 
-    return await obtenirOuCreerProfil(user);
+  return {
+    id: resultat.id,
+    title: titre,
+    release_type: releaseType,
+    status: "draft"
+  };
+}
+
+// LISTER LES SORTIES
+async function obtenirSorties() {
+  const user = await obtenirSession();
+
+  if (!user) {
+    throw new Error("Connecte-toi pour consulter tes projets.");
   }
 
-  // ENREGISTRER UN PROJET MUSICAL
-  async function creerSortie(title, releaseType) {
-    const session = await obtenirSession();
+  const q = query(
+    collection(db, "releases"),
+    where("artist_id", "==", user.uid),
+    orderBy("created_at", "desc")
+  );
 
-    if (!session) {
-      throw new Error("Ta session a expiré. Connecte-toi à nouveau.");
-    }
+  const resultat = await getDocs(q);
 
-    const titre = title.trim();
-    const typesAutorises = ["single", "ep", "album"];
+  return resultat.docs.map((document) => ({
+    id: document.id,
+    ...document.data()
+  }));
+}
 
-    if (!titre || titre.length > 200) {
-      throw new Error("Le titre est obligatoire et ne doit pas dépasser 200 caractères.");
-    }
+// RÉINITIALISATION DU MOT DE PASSE
+async function reinitialiserMotDePasse(email) {
+  await sendPasswordResetEmail(auth, email.trim());
+}
 
-    if (!typesAutorises.includes(releaseType)) {
-      throw new Error("Le type de sortie sélectionné n'est pas valide.");
-    }
+// DÉCONNEXION
+async function deconnecterArtiste() {
+  await signOut(auth);
+}
 
-    const { data, error } = await client
-      .from("music_releases")
-      .insert({
-        artist_id: session.user.id,
-        title: titre,
-        release_type: releaseType,
-        status: "draft"
-      })
-      .select("id, title, release_type, status, created_at")
-      .single();
-
-    if (error) throw error;
-
-    return data;
-  }
-
-  // LISTER LES PROJETS DE L'ARTISTE CONNECTÉ
-  async function obtenirSorties() {
-    const session = await obtenirSession();
-
-    if (!session) {
-      throw new Error("Connecte-toi pour consulter tes projets.");
-    }
-
-    const { data, error } = await client
-      .from("music_releases")
-      .select("id, title, release_type, status, created_at")
-      .eq("artist_id", session.user.id)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-
-    return data || [];
-  }
-
-  // DÉCONNEXION
-  async function deconnecterArtiste() {
-    const { error } = await client.auth.signOut();
-
-    if (error) throw error;
-  }
-
-  // Fonctions utilisées par index.html
-  window.inscrireArtiste = inscrireArtiste;
-  window.connecterArtiste = connecterArtiste;
-  window.obtenirSession = obtenirSession;
-  window.obtenirProfilArtiste = obtenirProfilArtiste;
-  window.creerSortie = creerSortie;
-  window.obtenirSorties = obtenirSorties;
-  window.deconnecterArtiste = deconnecterArtiste;
-
-  // Pour vérification et développement uniquement.
-  // La clé exposée ici est la clé publique, jamais la service_role.
-  window.shooterSupabase = client;
-})();
+// FONCTIONS ACCESSIBLES DEPUIS LE SITE
+window.inscrireArtiste = inscrireArtiste;
+window.connecterArtiste = connecterArtiste;
+window.obtenirSession = obtenirSession;
+window.obtenirProfilArtiste = obtenirProfilArtiste;
+window.creerSortie = creerSortie;
+window.obtenirSorties = obtenirSorties;
+window.reinitialiserMotDePasse = reinitialiserMotDePasse;
+window.deconnecterArtiste = deconnecterArtiste;
